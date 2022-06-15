@@ -1,24 +1,17 @@
+from ast import Tuple
 import datetime
-import os
 import pathlib
-from typing import Iterator, Tuple
+import numpy as np
 
 import pandas as pd
-import requests
 
 
 class SolarEventsGathering:
-    def __init__(self, year: int, province: str) -> None:
-        self.year = year
-        self.path_output_file = f'resources\\solar_events_{province}_{year}.txt'
-
-        url = f'https://cdn.mitma.gob.es/portal-web-drupal/salidapuestasol/{year}/{province}-{year}.txt'
-
-        if not os.path.exists(self.path_output_file):
-            self.__download_file(url, pathlib.Path(self.path_output_file))
+    def __init__(self, input_filepath: pathlib.Path) -> None:
+        self.year = 2022
+        self.path_output_file = input_filepath
 
         self._s_sunrise_dates, self._s_sunset_dates = self.__solar_events()
-
 
     @property
     def s_sunrise_dates(self):
@@ -30,21 +23,16 @@ class SolarEventsGathering:
         return self._s_sunset_dates
 
 
-    def __solar_events(self) -> Tuple[pd.Series, pd.Series]:
-        sunrise_dates = []
-        sunset_dates = []
+    def __solar_events(self):
+        solar_events = np.array(list(self.__parse_solar_events()), dtype=np.datetime64).T
 
-        for sunrise_date, sunset_date in self.__parse_solar_events():
-            sunrise_dates.append(sunrise_date)
-            sunset_dates.append(sunset_date)
-
-        s_sunrise_dates = pd.Series(sunrise_dates, name='sunrise_dates')
-        s_sunset_dates = pd.Series(sunset_dates, name='sunset_dates')
+        s_sunrise_dates = pd.Series(solar_events[0], name='sunrise_dates')
+        s_sunset_dates = pd.Series(solar_events[1], name='sunset_dates')
 
         return s_sunrise_dates, s_sunset_dates
 
 
-    def __parse_solar_events(self) -> Iterator[Tuple[datetime.datetime, datetime.datetime]]:
+    def __parse_solar_events(self):
         with open(self.path_output_file) as f:
             valid_lines = f.readlines()[7:38]
 
@@ -52,7 +40,7 @@ class SolarEventsGathering:
             yield from self.__parse_line(line)
 
 
-    def __parse_line(self, line: str) -> Iterator[Tuple[datetime.datetime, datetime.datetime]]:
+    def __parse_line(self, line: str):
         for month, i in enumerate(range(3, 123, 10), 1):
             try:
                 day = int(line[0: 2])
@@ -68,9 +56,3 @@ class SolarEventsGathering:
                 yield sunrise_date, sunset_date
             except ValueError:
                 pass
-
-
-    def __download_file(self, input_url: str, output_path: pathlib.Path) -> None:
-        with requests.get(input_url, stream=True) as response, open(output_path, 'wb+') as f:
-            for chunk in response.iter_content(chunk_size=16*1024):
-                f.write(chunk)
